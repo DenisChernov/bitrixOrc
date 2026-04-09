@@ -1,0 +1,13 @@
+#!/usr/bin/env php
+<?php
+
+require __DIR__.'/../vendor/autoload.php';
+
+use Symfony\Component\Console\Application;
+use App\Command\CreateEnvCommand;
+
+$application = new Application('Bitrix Orchestrator', '1.0.0');
+
+$application->add(new CreateEnvCommand());
+
+$application->run();

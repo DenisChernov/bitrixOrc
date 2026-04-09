@@ -1,0 +1,6 @@
+---
+name: git-commit
+description: Execute git commit...
+---
+# Git Commit
+...

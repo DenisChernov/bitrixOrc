@@ -1,0 +1,6 @@
+---
+name: bash-scripting
+description: Bash scripting workflow...
+---
+# Bash Scripting
+...
