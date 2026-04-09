@@ -18,12 +18,10 @@ use Symfony\Component\HttpClient\HttpClient;
 )]
 class CreateEnvCommand extends Command
 {
-    private HttpClientInterface $httpClient;
-
-    public function __construct()
-    {
+    public function __construct(
+        private readonly HttpClientInterface $httpClient
+    ) {
         parent::__construct();
-        $this->httpClient = HttpClient::create();
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -50,8 +48,7 @@ class CreateEnvCommand extends Command
 
         // 1. Клонирование репозитория
         $io->text('Клонирование репозитория bitrix-tools/env-docker...');
-        $process = new Process(['git', 'clone', 'https://github.com/bitrix-tools/env-docker.git', $targetDir]);
-        $process->run();
+        $process = $this->runProcess(['git', 'clone', 'https://github.com/bitrix-tools/env-docker.git', $targetDir]);
 
         if (!$process->isSuccessful()) {
             $io->error('Ошибка при клонировании репозитория.');
@@ -60,8 +57,7 @@ class CreateEnvCommand extends Command
         }
 
         // 2. Очистка git инфраструктуры
-        $process = new Process(['rm', '-rf', $targetDir . DIRECTORY_SEPARATOR . '.git']);
-        $process->run();
+        $this->runProcess(['rm', '-rf', $targetDir . DIRECTORY_SEPARATOR . '.git']);
 
         // 3. Работа с исходным кодом проекта (Git или restore.php)
         $repoUrl = $io->ask('Введите URL Git-репозитория проекта (оставьте пустым для использования restore.php)');
@@ -69,34 +65,28 @@ class CreateEnvCommand extends Command
 
         if ($repoUrl) {
             $io->text(sprintf('Клонирование репозитория проекта в www: %s...', $repoUrl));
-            $process = new Process(['git', 'clone', $repoUrl, $wwwDir]);
-            $process->setTimeout(600);
-            $process->run();
+            $process = $this->runProcess(['git', 'clone', $repoUrl, $wwwDir], null, 600);
 
             if (!$process->isSuccessful()) {
                 $io->error('Ошибка при клонировании репозитория проекта.');
                 $io->text($process->getErrorOutput());
-                // В случае ошибки клонирования создаем пустую папку, чтобы докер не ругался на отсутствие монтируемого пути
-                if (!is_dir($wwwDir)) {
-                    mkdir($wwwDir, 0775, true);
-                }
             } else {
                 $io->text('Репозиторий проекта успешно склонирован.');
             }
-        } else {
-            // Если репозитория нет, готовим папку для restore.php
-            if (!is_dir($wwwDir)) {
-                mkdir($wwwDir, 0775, true);
-            }
+        }
 
-            $io->text('Скачивание restore.php в папку www...');
-            try {
-                $response = $this->httpClient->request('GET', 'https://www.1c-bitrix.ru/download/scripts/restore.php');
-                file_put_contents($wwwDir . DIRECTORY_SEPARATOR . 'restore.php', $response->getContent());
-                $io->text('restore.php успешно скачан.');
-            } catch (\Exception $e) {
-                $io->warning('Не удалось скачать restore.php: ' . $e->getMessage());
-            }
+        // В любом случае подготавливаем папку www и скачиваем restore.php
+        if (!is_dir($wwwDir)) {
+            mkdir($wwwDir, 0775, true);
+        }
+
+        $io->text('Скачивание restore.php в папку www...');
+        try {
+            $response = $this->httpClient->request('GET', 'https://www.1c-bitrix.ru/download/scripts/restore.php');
+            file_put_contents($wwwDir . DIRECTORY_SEPARATOR . 'restore.php', $response->getContent());
+            $io->text('restore.php успешно скачан.');
+        } catch (\Exception $e) {
+            $io->warning('Не удалось скачать restore.php: ' . $e->getMessage());
         }
 
         // 4. Настройка .env
@@ -134,9 +124,7 @@ class CreateEnvCommand extends Command
             $io->text('Запуск контейнеров...');
             // Пытаемся найти docker-compose или docker compose
             $cmd = ['docker-compose', 'up', '-d'];
-            $process = new Process($cmd, $targetDir);
-            $process->setTimeout(600);
-            $process->run(function ($type, $buffer) use ($output) {
+            $process = $this->runProcess($cmd, $targetDir, 600, function ($type, $buffer) use ($output) {
                 $output->write($buffer);
             });
 
@@ -150,5 +138,13 @@ class CreateEnvCommand extends Command
         }
 
         return Command::SUCCESS;
+    }
+
+    protected function runProcess(array $command, string $cwd = null, int $timeout = 600, ?callable $callback = null): Process
+    {
+        $process = new Process($command, $cwd);
+        $process->setTimeout($timeout);
+        $process->run($callback);
+        return $process;
     }
 }
